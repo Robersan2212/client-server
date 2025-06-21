@@ -30,11 +30,17 @@ The software was developed using Python 3 as the primary programming language, c
 # Useful Websites
 
 {Make a list of websites that you found helpful in this project}
-* [Web Site Name](http://url.link.goes.here)
-* [Web Site Name](http://url.link.goes.here)
+* [NetworkAcademy.io](https://www.networkacademy.io/courses)
+* [YouTube: Network Programming in Python (NEW!)](https://www.youtube.com/watch?v=6TzHMSk2Evc)
+* [Socket Programming in Python (Guide) – Real Python](https://realpython.com/python-sockets/)
+* [Socket Programming HOWTO – Python 3 Documentation](https://docs.python.org/3/howto/sockets.html)
+* [User Datagram Client and Server – Python Module of the Week (PyMOTW)](https://pymotw.com/2/socket/udp.html)
 
 # Future Work
 
-{Make a list of things that you need to fix, improve, and add in the future.}
-* Item 1
-* Item 2
+* Add user authentication and access control for secure file operations
+
+* Implement SSL/TLS encryption for all network communications
+
+* Add support for resuming interrupted uploads and downloads
+
