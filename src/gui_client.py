@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, scrolledtext
 import socket
+import ssl
 import os
 import json
 import threading
@@ -177,18 +178,30 @@ class FileTransferGUI:
             host = self.server_entry.get().strip()
             port = int(self.port_entry.get().strip())
             
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(10)  # Add timeout
+            raw_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            raw_socket.settimeout(10)
+
+            if SSL_ENABLED:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.load_verify_locations(cafile=SSL_CERT_FILE)
+                context.check_hostname = False  # self-signed cert has no SAN extension
+                # verify_mode stays CERT_REQUIRED — server identity is still verified
+                self.socket = context.wrap_socket(raw_socket, server_hostname=host)
+            else:
+                self.socket = raw_socket
+
             self.socket.connect((host, port))
-            
+
             self.connected = True
-            self.status_label.config(text="Connected", foreground="green")
+            status_text = "Connected (TLS)" if SSL_ENABLED else "Connected"
+            self.status_label.config(text=status_text, foreground="green")
             self.connect_btn.config(text="Disconnect")
-            
+
             # Enable operation buttons
             self.update_button_states()
-            
-            self.log_message(f"Connected to server {host}:{port}")
+
+            encryption_note = " [TLS encrypted]" if SSL_ENABLED else " [unencrypted]"
+            self.log_message(f"Connected to server {host}:{port}{encryption_note}")
             
         except Exception as e:
             messagebox.showerror("Connection Error", f"Failed to connect to server: {str(e)}")
