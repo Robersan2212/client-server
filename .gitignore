@@ -1,0 +1,11 @@
+# Private key — never commit
+certs/server.key
+
+# Python
+__pycache__/
+*.pyc
+
+# Database and runtime files
+*.db
+uploads/
+file_transfer.log

@@ -1,5 +1,6 @@
 # Configuration settings for the file transfer system
 import os
+import pathlib
 
 # Server configuration
 SERVER_HOST = 'localhost'
@@ -28,3 +29,10 @@ COMMANDS = {
 # Logging configuration
 LOG_LEVEL = 'INFO'
 LOG_FILE = 'file_transfer.log'
+
+# SSL/TLS configuration
+SSL_ENABLED = True
+
+_BASE_DIR = pathlib.Path(__file__).parent.parent  # project root (one level above src/)
+SSL_CERT_FILE = str(_BASE_DIR / 'certs' / 'server.crt')
+SSL_KEY_FILE  = str(_BASE_DIR / 'certs' / 'server.key')

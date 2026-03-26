@@ -1,4 +1,5 @@
 import socket
+import ssl
 import threading
 import os
 import json
@@ -15,13 +16,21 @@ class FileTransferServer:
         
     def start_server(self):
         """Start the file transfer server"""
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
+        raw_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        raw_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        if SSL_ENABLED:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(certfile=SSL_CERT_FILE, keyfile=SSL_KEY_FILE)
+            self.server_socket = context.wrap_socket(raw_socket, server_side=True)
+        else:
+            self.server_socket = raw_socket
+
         try:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(MAX_CONNECTIONS)
-            print(f"[SERVER] Listening on {self.host}:{self.port}")
+            encryption = "TLS enabled" if SSL_ENABLED else "unencrypted"
+            print(f"[SERVER] Listening on {self.host}:{self.port} ({encryption})")
             print(f"[SERVER] Upload directory: {UPLOAD_DIRECTORY}")
             print(f"[SERVER] Database: {DATABASE_NAME}")
             
