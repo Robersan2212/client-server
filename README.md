@@ -28,7 +28,6 @@ The software was developed using Python 3 as the primary programming language, c
 
 # Useful Websites
 
-{Make a list of websites that you found helpful in this project}
 * [NetworkAcademy.io](https://www.networkacademy.io/courses)
 * [YouTube: Network Programming in Python (NEW!)](https://www.youtube.com/watch?v=6TzHMSk2Evc)
 * [Socket Programming in Python (Guide) – Real Python](https://realpython.com/python-sockets/)
