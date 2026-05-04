@@ -3,7 +3,8 @@ import ssl
 import threading
 import os
 import json
-from datetime import datetime
+import jwt
+from datetime import datetime, timedelta
 from config import *
 from database import FileDatabase, calculate_file_hash
 
@@ -51,6 +52,66 @@ class FileTransferServer:
             if self.server_socket:
                 self.server_socket.close()
     
+    def _validate_token(self, token_str):
+        """Decode and validate a JWT. Returns the payload dict or raises jwt.PyJWTError."""
+        return jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+    def handle_login(self, client_socket, command_parts):
+        """Authenticate an existing user and return a signed JWT on success."""
+        try:
+            if len(command_parts) < 3:
+                client_socket.send("ERROR|Missing username or password".encode('utf-8'))
+                return
+            username = command_parts[1]
+            password = command_parts[2]
+
+            if self.db.verify_user(username, password):
+                payload = {
+                    'sub': username,
+                    'iat': datetime.utcnow(),
+                    'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+                }
+                token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+                client_socket.send(f"SUCCESS|{token}".encode('utf-8'))
+                print(f"[SERVER] Login successful: {username}")
+            else:
+                client_socket.send("ERROR|Invalid username or password".encode('utf-8'))
+                print(f"[SERVER] Login failed for: {username}")
+
+        except Exception as e:
+            client_socket.send(f"ERROR|Login failed: {str(e)}".encode('utf-8'))
+            print(f"[SERVER ERROR] Login: {e}")
+
+    def handle_register(self, client_socket, command_parts):
+        """Create a new user account and immediately issue a JWT (auto-login on register)."""
+        try:
+            if len(command_parts) < 3:
+                client_socket.send("ERROR|Missing username or password".encode('utf-8'))
+                return
+            username = command_parts[1]
+            password = command_parts[2]
+
+            if not username or not password:
+                client_socket.send("ERROR|Username and password cannot be empty".encode('utf-8'))
+                return
+
+            if self.db.create_user(username, password):
+                # Auto-login: issue a token immediately after registration
+                payload = {
+                    'sub': username,
+                    'iat': datetime.utcnow(),
+                    'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
+                }
+                token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+                client_socket.send(f"SUCCESS|{token}".encode('utf-8'))
+                print(f"[SERVER] Registration successful: {username}")
+            else:
+                client_socket.send("ERROR|Username already taken".encode('utf-8'))
+
+        except Exception as e:
+            client_socket.send(f"ERROR|Registration failed: {str(e)}".encode('utf-8'))
+            print(f"[SERVER ERROR] Register: {e}")
+
     def handle_client(self, client_socket, client_address):
         """Handle individual client connections"""
         try:
@@ -59,13 +120,36 @@ class FileTransferServer:
                 command_data = client_socket.recv(BUFFER_SIZE).decode('utf-8')
                 if not command_data:
                     break
-                
-                print(f"[SERVER] Received command from {client_address}: {command_data}")
-                
-                # Parse command
+
+                print(f"[SERVER] Received command from {client_address}: {command_data[:80]}")
+
                 command_parts = command_data.split('|')
                 command = command_parts[0]
-                
+
+                # --- Unprotected commands — no token required ---
+                if command == COMMANDS['LOGIN']:
+                    self.handle_login(client_socket, command_parts)
+                    continue
+                if command == COMMANDS['REGISTER']:
+                    self.handle_register(client_socket, command_parts)
+                    continue
+
+                # --- All other commands require a valid JWT at position 0 ---
+                # Protocol: "<token>|COMMAND|args..."
+                # _validate_token raises jwt.PyJWTError on any invalid/expired token
+                try:
+                    self._validate_token(command_parts[0])
+                except jwt.ExpiredSignatureError:
+                    client_socket.send("ERROR|Token expired. Please log in again.".encode('utf-8'))
+                    continue
+                except jwt.PyJWTError:
+                    client_socket.send("ERROR|Unauthorized".encode('utf-8'))
+                    continue
+
+                # Strip the token — remaining parts are the original command + args
+                command_parts = command_parts[1:]
+                command = command_parts[0]
+
                 if command == COMMANDS['UPLOAD']:
                     self.handle_upload(client_socket, client_address, command_parts)
                 elif command == COMMANDS['DOWNLOAD']:
@@ -77,9 +161,8 @@ class FileTransferServer:
                 elif command == COMMANDS['INFO']:
                     self.handle_info(client_socket, command_parts)
                 else:
-                    response = "ERROR|Unknown command"
-                    client_socket.send(response.encode('utf-8'))
-                
+                    client_socket.send("ERROR|Unknown command".encode('utf-8'))
+
         except Exception as e:
             print(f"[SERVER ERROR] Error handling client {client_address}: {e}")
         finally:
