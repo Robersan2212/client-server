@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import hashlib
+import secrets
 from datetime import datetime
 from config import DATABASE_NAME
 
@@ -66,6 +67,17 @@ class FileDatabase:
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     status TEXT,
                     FOREIGN KEY (file_id) REFERENCES files (id)
+                )
+            ''')
+
+            # Create users table — UNIQUE on username enforces deduplication at DB layer
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    salt TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
@@ -189,6 +201,89 @@ class FileDatabase:
             
         except Exception as e:
             print(f"[DATABASE ERROR] Failed to log transfer: {e}")
+
+    def create_user(self, username, password):
+        """
+        Hash password with PBKDF2-SHA256 (310,000 iterations, OWASP 2023 recommendation)
+        and insert a new user record. Returns True on success, False if username is taken.
+        """
+        try:
+            # Generate a 256-bit random salt unique to this user
+            salt = secrets.token_hex(32)
+            password_hash = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode('utf-8'),
+                salt.encode('utf-8'),
+                310_000
+            ).hex()
+
+            conn = sqlite3.connect(self.db_name)
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT INTO users (username, password_hash, salt) VALUES (?, ?, ?)',
+                (username, password_hash, salt)
+            )
+            conn.commit()
+            conn.close()
+            print(f"[DATABASE] User created: {username}")
+            return True
+
+        except sqlite3.IntegrityError:
+            # UNIQUE constraint on username triggered — duplicate username
+            print(f"[DATABASE] Username already exists: {username}")
+            return False
+        except Exception as e:
+            print(f"[DATABASE ERROR] Failed to create user: {e}")
+            return False
+
+    def verify_user(self, username, password):
+        """
+        Fetch stored hash and salt for the given username, recompute the hash
+        from the supplied password, and compare using secrets.compare_digest
+        (constant-time comparison to prevent timing attacks).
+        Returns True if credentials are valid, False otherwise.
+        """
+        try:
+            conn = sqlite3.connect(self.db_name)
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT password_hash, salt FROM users WHERE username = ?',
+                (username,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            if row is None:
+                return False  # username does not exist
+
+            stored_hash, salt = row
+            candidate_hash = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode('utf-8'),
+                salt.encode('utf-8'),
+                310_000
+            ).hex()
+
+            # Constant-time comparison prevents timing-based brute-force attacks
+            return secrets.compare_digest(candidate_hash, stored_hash)
+
+        except Exception as e:
+            print(f"[DATABASE ERROR] Failed to verify user: {e}")
+            return False
+
+    def get_user(self, username):
+        """Return (id, username) tuple for the given username, or None if not found."""
+        try:
+            conn = sqlite3.connect(self.db_name)
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, username FROM users WHERE username = ?', (username,))
+            row = cursor.fetchone()
+            conn.close()
+            return row
+        except Exception as e:
+            print(f"[DATABASE ERROR] Failed to get user: {e}")
+            return None
+
 
 def calculate_file_hash(file_path):
     """Calculate SHA256 hash of a file"""

@@ -1,6 +1,22 @@
-# Overview
+# Secure File Transfer System
 
-As a software engineer focused on developing secure networking applications with Python, I designed and implemented a robust file transfer system to deepen my understanding of client-server architectures and real-world network communication. This project centers on building a reliable platform for transferring files between computers, emphasizing usability, extensibility, and data integrity.
+A production-grade client-server file transfer application built in Python that demonstrates core competencies in network programming, applied cryptography, and secure software design.
+
+## Overview
+
+File transfer is a foundational network operation, yet most introductory implementations leave out the security layer entirely — transmitting data in plaintext with no concept of who is allowed to do what. This project addresses that gap by building a full-featured file transfer system where security is not an afterthought but a core design requirement.
+
+The system allows authenticated users to upload, download, list, delete, and inspect files stored on a central server. Every connection is encrypted end-to-end with TLS, every user account is protected with industry-standard password hashing, and every file operation requires a valid JWT — making this a realistic model of how secure networked services are built in practice.
+
+**Key security properties implemented:**
+
+- **TLS/SSL transport encryption** — all data in transit is encrypted; plain TCP connections are rejected
+- **JWT-based stateless authentication** — clients authenticate once and carry a signed, time-limited token for subsequent requests
+- **PBKDF2-SHA256 password hashing** — passwords are stored as salted hashes using 310,000 iterations (OWASP 2023 recommendation), never in plaintext
+- **Constant-time credential comparison** — login verification uses `secrets.compare_digest` to prevent timing-based brute-force attacks
+- **SHA-256 file integrity verification** — every uploaded file is hashed server-side so corruption can be detected
+
+This project demonstrates that security and usability can coexist: a Tkinter GUI client provides a clean graphical interface for all file operations, while the server handles multiple concurrent clients via threading.
 
 
 # Network Communication
@@ -11,19 +27,17 @@ Communication between the client and server is handled using TCP (Transmission C
 
 # Development Environment
 
-The software was developed using Python 3 as the primary programming language, chosen for its simplicity, readability, and powerful standard libraries. Key libraries and modules include:
+The software was developed using Python 3 as the primary programming language. Key libraries and modules include:
 
-    socket: For TCP network communication between client and server
-
-    threading: To handle multiple client connections concurrently on the server side
-
-    sqlite3: To manage the SQLite database for storing file metadata and transfer logs
-
-    hashlib: To compute SHA256 hashes for file integrity verification
-
-    tkinter: To build the graphical user interface (GUI) for the client application, including file dialogs and progress bars
-
-    json: For encoding and decoding structured data in communication messages
+- **socket** — TCP network communication between client and server
+- **ssl** — TLS/SSL wrapping for encrypted connections
+- **threading** — concurrent client handling on the server side
+- **sqlite3** — SQLite database for file metadata and transfer logs
+- **hashlib** — SHA-256 file integrity hashing and PBKDF2 password hashing
+- **secrets** — cryptographically secure salt generation and constant-time comparison
+- **tkinter** — graphical user interface for the client, including file dialogs and progress bars
+- **json** — structured data encoding for client-server messages
+- **PyJWT** — JWT creation, signing, and validation
 
 
 # Useful Websites
@@ -36,9 +50,11 @@ The software was developed using Python 3 as the primary programming language, c
 
 # Future Work
 
-* Add user authentication and access control for secure file operations
+* Add support for resuming interrupted uploads and downloads (chunked transfer with byte-range tracking)
 
-* Implement SSL/TLS encryption for all network communications
+* Implement per-user file ownership so users can only delete their own files
 
-* Add support for resuming interrupted uploads and downloads
+* Add a REST API layer as an alternative to the raw TCP protocol, enabling web and mobile clients
+
+* Containerize the server with Docker and add a `docker-compose` configuration for one-command deployment
 

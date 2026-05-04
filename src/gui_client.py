@@ -16,7 +16,9 @@ class FileTransferGUI:
         
         self.socket = None
         self.connected = False
-        self.selected_file_path = None  # Initialize this attribute
+        self.selected_file_path = None
+        self.auth_token = None    # JWT string after successful login; None = unauthenticated
+        self.current_user = None  # Username of the logged-in user
         
         self.setup_gui()
         
@@ -154,6 +156,13 @@ class FileTransferGUI:
         if hasattr(entry_widget, 'placeholder_active') and entry_widget.placeholder_active:
             return ""
         return entry_widget.get()
+
+    def _send_command(self, command_string):
+        """Prepend the auth token and send a protected command over the socket.
+        All file operation methods call this instead of self.socket.send() directly,
+        so the token is always included in one place."""
+        full_command = f"{self.auth_token}|{command_string}"
+        self.socket.send(full_command.encode('utf-8'))
     
     def log_message(self, message):
         """Add message to output text area"""
@@ -197,17 +206,100 @@ class FileTransferGUI:
             self.status_label.config(text=status_text, foreground="green")
             self.connect_btn.config(text="Disconnect")
 
-            # Enable operation buttons
-            self.update_button_states()
-
             encryption_note = " [TLS encrypted]" if SSL_ENABLED else " [unencrypted]"
             self.log_message(f"Connected to server {host}:{port}{encryption_note}")
+
+            # File op buttons stay disabled until the login dialog authenticates the user
+            self.show_login_dialog()
             
         except Exception as e:
             messagebox.showerror("Connection Error", f"Failed to connect to server: {str(e)}")
             self.log_message(f"Connection failed: {str(e)}")
             self.connected = False
     
+    def show_login_dialog(self):
+        """Show a modal login/register dialog.
+        Blocks until the user authenticates or closes the window.
+        Closing without authenticating triggers a clean disconnect."""
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Authentication Required")
+        dialog.geometry("320x220")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)  # keep dialog in front of parent, no separate taskbar entry
+        dialog.grab_set()            # modal — all events route exclusively to this dialog
+
+        # --- Widgets ---
+        ttk.Label(dialog, text="Username:").grid(row=0, column=0, padx=10, pady=(15, 5), sticky=tk.W)
+        username_entry = ttk.Entry(dialog, width=25)
+        username_entry.grid(row=0, column=1, padx=10, pady=(15, 5))
+        username_entry.focus_set()
+
+        ttk.Label(dialog, text="Password:").grid(row=1, column=0, padx=10, pady=5, sticky=tk.W)
+        password_entry = ttk.Entry(dialog, width=25, show="*")
+        password_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        # Status label displays inline error messages without opening a messagebox
+        status_var = tk.StringVar(value="")
+        ttk.Label(dialog, textvariable=status_var, foreground="red").grid(
+            row=2, column=0, columnspan=2, pady=5
+        )
+
+        def _send_auth(command_name):
+            """Shared logic for Login and Register — wire format is identical for both."""
+            username = username_entry.get().strip()
+            password = password_entry.get().strip()
+
+            if not username or not password:
+                status_var.set("Username and password are required.")
+                return
+
+            try:
+                message = f"{COMMANDS[command_name]}|{username}|{password}"
+                self.socket.send(message.encode('utf-8'))
+                response = self.socket.recv(BUFFER_SIZE).decode('utf-8')
+                parts = response.split('|', 1)
+
+                if parts[0] == 'SUCCESS':
+                    token = parts[1]
+                    self.auth_token = token
+                    self.current_user = username
+                    self.root.title(f"File Transfer Client — {username}")
+                    self.log_message(f"Authenticated as: {username}")
+                    self.update_button_states()
+                    dialog.destroy()
+                else:
+                    error_msg = parts[1] if len(parts) > 1 else "Authentication failed."
+                    status_var.set(error_msg)
+
+            except Exception as e:
+                status_var.set(f"Error: {str(e)}")
+                self.log_message(f"Auth error: {str(e)}")
+
+        def on_login():
+            _send_auth('LOGIN')
+
+        def on_register():
+            _send_auth('REGISTER')
+
+        def on_close():
+            # User dismissed without authenticating — disconnect to avoid a half-open session
+            dialog.destroy()
+            self.disconnect_from_server()
+            self.log_message("Authentication cancelled. Disconnected.")
+
+        # --- Buttons ---
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        ttk.Button(btn_frame, text="Login",    command=on_login).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frame, text="Register", command=on_register).grid(row=0, column=1, padx=5)
+
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
+        dialog.bind('<Return>', lambda e: on_login())  # Enter key submits login
+
+        # wait_window enters a local event loop — dialog is modal without freezing the GUI
+        self.root.wait_window(dialog)
+
     def disconnect_from_server(self):
         """Disconnect from the server"""
         if self.socket:
@@ -218,30 +310,34 @@ class FileTransferGUI:
             self.socket = None
         
         self.connected = False
+        self.auth_token = None
+        self.current_user = None
         self.status_label.config(text="Disconnected", foreground="red")
         self.connect_btn.config(text="Connect")
-        
+        self.root.title("File Transfer Client")
+
         # Disable operation buttons
         self.update_button_states()
-        
+
         self.log_message("Disconnected from server")
     
     def update_button_states(self):
-        """Update button states based on connection and file selection"""
-        if self.connected:
-            # Enable download and list buttons when connected
+        """Update button states based on connection status and authentication.
+        All file operations require both an active connection AND a valid auth token."""
+        authenticated = self.connected and self.auth_token is not None
+
+        if authenticated:
             self.download_btn.config(state="normal")
             self.list_btn.config(state="normal")
             self.info_btn.config(state="normal")
             self.delete_btn.config(state="normal")
-            
-            # Enable upload button only if file is selected and connected
+
+            # Upload also requires a file to be selected
             if self.selected_file_path and os.path.exists(self.selected_file_path):
                 self.upload_btn.config(state="normal")
             else:
                 self.upload_btn.config(state="disabled")
         else:
-            # Disable all operation buttons when disconnected
             self.upload_btn.config(state="disabled")
             self.download_btn.config(state="disabled")
             self.list_btn.config(state="disabled")
@@ -291,10 +387,10 @@ class FileTransferGUI:
                 
                 self.log_message(f"Starting upload of {filename} ({file_size} bytes)")
                 
-                # Send upload command
+                # Send upload command (token prepended by _send_command)
                 command = f"{COMMANDS['UPLOAD']}|{filename}|{file_size}"
                 self.log_message(f"Sending command: {command}")
-                self.socket.send(command.encode('utf-8'))
+                self._send_command(command)
                 
                 # Wait for server acknowledgment
                 response = self.socket.recv(BUFFER_SIZE).decode('utf-8')
@@ -376,9 +472,9 @@ class FileTransferGUI:
             try:
                 self.log_message(f"Starting download of {filename}")
                 
-                # Send download command
+                # Send download command (token prepended by _send_command)
                 command = f"{COMMANDS['DOWNLOAD']}|{filename}"
-                self.socket.send(command.encode('utf-8'))
+                self._send_command(command)
                 
                 # Receive file info
                 response = self.socket.recv(BUFFER_SIZE).decode('utf-8')
@@ -431,7 +527,7 @@ class FileTransferGUI:
         
         try:
             command = COMMANDS['LIST']
-            self.socket.send(command.encode('utf-8'))
+            self._send_command(command)
             
             response = self.socket.recv(BUFFER_SIZE * 4).decode('utf-8')
             print(f"[CLIENT] Received response: {response}")  # Debug line
@@ -482,7 +578,7 @@ class FileTransferGUI:
         
         try:
             command = f"{COMMANDS['INFO']}|{filename}"
-            self.socket.send(command.encode('utf-8'))
+            self._send_command(command)
             
             response = self.socket.recv(BUFFER_SIZE * 2).decode('utf-8')
             response_parts = response.split('|', 1)
@@ -528,7 +624,7 @@ Uploaded by: {info['client_ip']}
         
         try:
             command = f"{COMMANDS['DELETE']}|{filename}"
-            self.socket.send(command.encode('utf-8'))
+            self._send_command(command)
             
             response = self.socket.recv(BUFFER_SIZE).decode('utf-8')
             self.log_message(f"Delete result: {response}")

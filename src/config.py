@@ -23,7 +23,9 @@ COMMANDS = {
     'DOWNLOAD': 'DOWNLOAD',
     'LIST': 'LIST',
     'DELETE': 'DELETE',
-    'INFO': 'INFO'
+    'INFO': 'INFO',
+    'LOGIN': 'LOGIN',
+    'REGISTER': 'REGISTER'
 }
 
 # Logging configuration
@@ -36,3 +38,9 @@ SSL_ENABLED = True
 _BASE_DIR = pathlib.Path(__file__).parent.parent  # project root (one level above src/)
 SSL_CERT_FILE = str(_BASE_DIR / 'certs' / 'server.crt')
 SSL_KEY_FILE  = str(_BASE_DIR / 'certs' / 'server.key')
+
+# JWT configuration
+# JWT_SECRET should be set via environment variable in production — never hardcode in real deployments
+JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-only-secret-change-in-production')
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRY_HOURS = 24
