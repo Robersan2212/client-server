@@ -27,19 +27,17 @@ Communication between the client and server is handled using TCP (Transmission C
 
 # Development Environment
 
-The software was developed using Python 3 as the primary programming language, chosen for its simplicity, readability, and powerful standard libraries. Key libraries and modules include:
+The software was developed using Python 3 as the primary programming language. Key libraries and modules include:
 
-    socket: For TCP network communication between client and server
-
-    threading: To handle multiple client connections concurrently on the server side
-
-    sqlite3: To manage the SQLite database for storing file metadata and transfer logs
-
-    hashlib: To compute SHA256 hashes for file integrity verification
-
-    tkinter: To build the graphical user interface (GUI) for the client application, including file dialogs and progress bars
-
-    json: For encoding and decoding structured data in communication messages
+- **socket** — TCP network communication between client and server
+- **ssl** — TLS/SSL wrapping for encrypted connections
+- **threading** — concurrent client handling on the server side
+- **sqlite3** — SQLite database for file metadata and transfer logs
+- **hashlib** — SHA-256 file integrity hashing and PBKDF2 password hashing
+- **secrets** — cryptographically secure salt generation and constant-time comparison
+- **tkinter** — graphical user interface for the client, including file dialogs and progress bars
+- **json** — structured data encoding for client-server messages
+- **PyJWT** — JWT creation, signing, and validation
 
 
 # Useful Websites
